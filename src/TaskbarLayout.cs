@@ -77,7 +77,11 @@ namespace Perfview
                     cache.Add(AutomationElement.ClassNameProperty);
                     using (cache.Activate())
                     {
-                        AutomationElementCollection elements = root.FindAll(TreeScope.Descendants, Condition.TrueCondition);
+                        // Native ownership puts our graphs inside the taskbar's
+                        // accessibility subtree. They must not block their own
+                        // placement or each scan moves them out of the last gap.
+                        Condition otherProcess = new NotCondition(new PropertyCondition(AutomationElement.ProcessIdProperty, System.Diagnostics.Process.GetCurrentProcess().Id));
+                        AutomationElementCollection elements = root.FindAll(TreeScope.Descendants, otherProcess);
                         foreach (AutomationElement element in elements)
                         {
                             AutomationElement.AutomationElementInformation info = element.Cached;
@@ -111,22 +115,65 @@ namespace Perfview
         }
     }
 
+    internal sealed class TaskbarLayoutStability
+    {
+        private TaskbarLayout stable;
+        private bool overflowWasOpen;
+        private DateTime settleAfter;
+
+        internal TaskbarLayout Select(TaskbarLayout current, IntPtr taskbar, Rectangle bar, bool overflowOpen, DateTime now)
+        {
+            if (stable != null && (stable.Handle != taskbar || stable.Bounds != bar))
+            {
+                stable = null;
+                overflowWasOpen = false;
+                settleAfter = DateTime.MinValue;
+            }
+            if (overflowOpen)
+            {
+                overflowWasOpen = true;
+                // The flyout can temporarily expand the tray's reported bounds.
+                // Keep using the last confirmed gap throughout that interaction.
+                if (stable != null) return stable;
+            }
+            else if (overflowWasOpen)
+            {
+                overflowWasOpen = false;
+                settleAfter = now.AddMilliseconds(300);
+            }
+            bool fresh = current != null && current.Reliable && current.Handle == taskbar && current.Bounds == bar && (now - current.CapturedAt).TotalSeconds <= 1.5;
+            // A slow or interrupted accessibility read is not evidence that the
+            // existing position became unsafe. Only replace it with a verified
+            // layout, or discard it when the taskbar's actual geometry changes.
+            if (!fresh || current.CapturedAt < settleAfter) return stable;
+            stable = current;
+            settleAfter = DateTime.MinValue;
+            return current;
+        }
+    }
+
     internal sealed class TaskbarLayoutMonitor : IDisposable
     {
         private readonly System.Threading.Timer timer;
+        private readonly Func<TaskbarLayout> capture;
         private int reading, generation;
         private readonly object snapshotGate = new object();
         private volatile bool disposed;
         private TaskbarLayout snapshot;
 
-        internal TaskbarLayoutMonitor() { timer = new System.Threading.Timer(Read, null, 0, 400); }
+        internal TaskbarLayoutMonitor(Func<TaskbarLayout> capture = null)
+        {
+            this.capture = capture ?? TaskbarLayout.Capture;
+            timer = new System.Threading.Timer(Read, null, 0, 400);
+        }
         internal TaskbarLayout Snapshot { get { return Interlocked.CompareExchange(ref snapshot, null, null); } }
-        internal void Invalidate()
+        internal void RequestRefresh(bool discardSnapshot = false)
         {
             lock (snapshotGate)
             {
-                generation++;
-                Interlocked.Exchange(ref snapshot, null);
+                // Coalesce ordinary Explorer notifications. Cancelling every
+                // in-flight read can starve publication throughout an animation.
+                if (discardSnapshot) { generation++; Interlocked.Exchange(ref snapshot, null); }
             }
             if (!disposed) ThreadPool.QueueUserWorkItem(Read);
         }
@@ -136,7 +183,7 @@ namespace Perfview
             try
             {
                 int version = generation;
-                TaskbarLayout layout = TaskbarLayout.Capture();
+                TaskbarLayout layout = capture();
                 lock (snapshotGate) { if (!disposed && version == generation) Interlocked.Exchange(ref snapshot, layout); }
             }
             finally { Interlocked.Exchange(ref reading, 0); }

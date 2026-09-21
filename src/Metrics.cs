@@ -15,6 +15,7 @@ namespace Perfview
         public double Cpu = double.NaN, Gpu = double.NaN, Memory = double.NaN, Disk = double.NaN;
         public double Download = double.NaN, Upload = double.NaN, DiskRead = double.NaN, DiskWrite = double.NaN;
         public ulong TotalMemory, UsedMemory;
+        public TemperatureSnapshot Temperatures = TemperatureSnapshot.Disabled;
         public double Value(Metric metric)
         {
             switch (metric) { case Metric.Cpu: return Cpu; case Metric.Gpu: return Gpu; case Metric.Memory: return Memory; case Metric.Disk: return Disk; default: return Download + Upload; }
@@ -235,14 +236,17 @@ namespace Perfview
         private readonly object gate = new object();
         private readonly Action<Sample> publish;
         private readonly System.Threading.Timer timer;
+        private readonly TemperatureService temperatures;
         private MetricsReader reader;
         private bool disposed;
-        internal SamplingService(int interval, Action<Sample> publish)
+        internal SamplingService(int interval, Action<Sample> publish, bool showTemperatures = false)
         {
             this.publish = publish;
+            temperatures = new TemperatureService(showTemperatures, interval);
             timer = new System.Threading.Timer(Tick, null, 0, interval);
         }
-        internal void SetInterval(int interval) { timer.Change(0, interval); }
+        internal void SetInterval(int interval) { timer.Change(0, interval); temperatures.SetInterval(interval); }
+        internal void SetTemperaturesEnabled(bool enabled) { temperatures.SetEnabled(enabled); }
         private void Tick(object state)
         {
             if (!System.Threading.Monitor.TryEnter(gate)) return;
@@ -250,7 +254,9 @@ namespace Perfview
             {
                 if (disposed) return;
                 if (reader == null) reader = new MetricsReader();
-                publish(reader.Read());
+                Sample sample = reader.Read();
+                sample.Temperatures = temperatures.Latest;
+                publish(sample);
             }
             catch (Exception error) { Trace.TraceError(error.ToString()); publish(new Sample()); }
             finally { System.Threading.Monitor.Exit(gate); }
@@ -258,6 +264,7 @@ namespace Perfview
         public void Dispose()
         {
             timer.Dispose();
+            temperatures.Dispose();
             lock (gate) { disposed = true; if (reader != null) reader.Dispose(); }
         }
     }

@@ -6,7 +6,8 @@ $app = Join-Path $env:PerfviewAppDirectory 'Perfview.exe'
 $actualVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($app).FileVersion
 if ($actualVersion -ne $env:ASSEMBLY_VERSION) { throw "Unexpected app version: $actualVersion" }
 $zip = Join-Path $releaseDirectory "Perfview-$env:RELEASE_VERSION-Windows-Portable.zip"
-Compress-Archive -LiteralPath $app, "$app.config" -DestinationPath $zip
+$appFiles = @(Get-ChildItem -LiteralPath $env:PerfviewAppDirectory -File | Where-Object { $_.Name -in @('Perfview.exe', 'Perfview.exe.config', 'THIRD-PARTY-NOTICES.txt') -or $_.Extension -eq '.dll' } | ForEach-Object FullName)
+Compress-Archive -LiteralPath $appFiles -DestinationPath $zip
 $installer = Join-Path $env:GITHUB_WORKSPACE "artifacts\installer\Perfview-$env:ASSEMBLY_VERSION-Setup.exe"
 Copy-Item -LiteralPath $installer -Destination (Join-Path $releaseDirectory "Perfview-$env:RELEASE_VERSION-Setup.exe")
 foreach ($file in Get-ChildItem -LiteralPath $releaseDirectory -File) {

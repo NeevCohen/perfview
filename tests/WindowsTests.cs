@@ -9,6 +9,17 @@ using NUnit.Framework;
 
 namespace Perfview.Tests
 {
+    [SetUpFixture]
+    public class WindowsTestEnvironment
+    {
+        [OneTimeSetUp]
+        public void ConfigureWinForms()
+        {
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+        }
+    }
+
     [TestFixture, Category("LiveCounters")]
     public class LiveCounterTests
     {
@@ -61,8 +72,6 @@ namespace Perfview.Tests
         [OneTimeSetUp]
         public void PrepareWindowsAndHistory()
         {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
             Directory.CreateDirectory(TestContext.CurrentContext.WorkDirectory);
             preview = new History();
             DateTime start = DateTime.UtcNow.AddSeconds(-60);

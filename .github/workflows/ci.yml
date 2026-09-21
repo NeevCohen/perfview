@@ -46,7 +46,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
           cache: true
-          cache-dependency-path: tests/packages.lock.json
+          cache-dependency-path: |
+            packages.lock.json
+            tests/packages.lock.json
 
       - name: Select SDK and stamp build version
         id: version
@@ -59,7 +61,7 @@ jobs:
         run: ./scripts/ci/Invoke-PowerShellLint.ps1
 
       - name: Build app and installer
-        # build.ps1 already treats C# compiler warnings as errors. Run tests
+        # The app project treats C# compiler warnings as errors. Run tests
         # separately so CI can exclude hardware-dependent app checks.
         run: ./build-installer.ps1 -Bootstrap
 

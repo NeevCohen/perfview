@@ -68,7 +68,7 @@ namespace Perfview
             overlay.OpenMenu += delegate { menu.Show(Cursor.Position); };
             overlay.PositionChanged += delegate { SaveSettings(); };
             overlay.Show();
-            sampler = new SamplingService(settings.Interval, ReceiveSample);
+            sampler = new SamplingService(settings.Interval, ReceiveSample, settings.ShowTemperatures);
             themeTimer.Tick += delegate
             {
                 Palette next = Palette.Create(settings.Theme);
@@ -96,7 +96,7 @@ namespace Perfview
                     if (exiting || paused) return;
                     history.Add(sample);
                     overlay.Graphs.Invalidate();
-                    string summary = "CPU " + MetricMath.PercentText(sample.Cpu) + " | GPU " + MetricMath.PercentText(sample.Gpu) + " | RAM " + MetricMath.PercentText(sample.Memory) + " | Disk " + MetricMath.PercentText(sample.Disk);
+                    string summary = GraphPaint.Summary(sample, settings.ShowTemperatures);
                     tray.Text = summary.Length > 63 ? summary.Substring(0, 63) : summary;
                     tooltip.SetToolTip(overlay.Graphs, summary + "\nDownload " + MetricMath.RateText(sample.Download) + " | Upload " + MetricMath.RateText(sample.Upload) + "\nDisk read " + MetricMath.RateText(sample.DiskRead) + " | write " + MetricMath.RateText(sample.DiskWrite) + "\nClick for details \u00b7 Drag to move \u00b7 Right-click for settings");
                     overlay.Graphs.AccessibleDescription = summary;
@@ -109,7 +109,7 @@ namespace Perfview
         {
             if (exiting) return;
             if (details != null && !details.IsDisposed) { details.Activate(); return; }
-            details = new DetailsWindow(history, palette) { Icon = icon };
+            details = new DetailsWindow(history, palette, settings.ShowTemperatures) { Icon = icon };
             details.ShowSettings += OpenSettings;
             details.TogglePause += TogglePause;
             details.UpdateSample(history.Latest, paused, settings.Interval);
@@ -133,6 +133,7 @@ namespace Perfview
                     overlay.Graphs.Palette = palette;
                     overlay.UpdatePosition(); overlay.Graphs.Invalidate();
                     sampler.SetInterval(settings.Interval);
+                    sampler.SetTemperaturesEnabled(settings.ShowTemperatures);
                     if (details != null && !details.IsDisposed) { details.Close(); OpenDetails(); }
                 }
                 catch (Exception error) { MessageBox.Show(error.Message, "Could not apply settings", MessageBoxButtons.OK, MessageBoxIcon.Warning); }

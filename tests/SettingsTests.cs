@@ -73,5 +73,16 @@ namespace Perfview.Tests
             File.WriteAllText(settingsPath, "not xml");
             Assert.That(Settings.Load(settingsPath).ShowCpu, Is.True);
         }
+
+        [Test]
+        public void TemperatureOptInPersistsAndLegacySettingsRemainOff()
+        {
+            File.WriteAllText(settingsPath, "<Settings><Theme>Dark</Theme></Settings>");
+            Assert.That(Settings.Load(settingsPath).ShowTemperatures, Is.False);
+            new Settings { ShowTemperatures = true }.Save(settingsPath);
+            Assert.That(Settings.Load(settingsPath).ShowTemperatures, Is.True);
+            new Settings { ShowTemperatures = false }.Save(settingsPath);
+            Assert.That(Settings.Load(settingsPath).ShowTemperatures, Is.False);
+        }
     }
 }

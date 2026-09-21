@@ -12,6 +12,46 @@ namespace Perfview.Tests
     [TestFixture, NonParallelizable]
     public class DetailsPopupTests
     {
+        [Test, Apartment(ApartmentState.STA), Category("Desktop")]
+        [Explicit("Requires an interactive Windows desktop with Perfview closed and free taskbar space.")]
+        public void ClickingEachTaskbarGraphOpensThePerformanceWindow()
+        {
+            Assert.That(Native.FindWindow(null, "Perfview Taskbar"), Is.EqualTo(IntPtr.Zero));
+            IntPtr previousDpi = Native.SetThreadDpiAwarenessContext(new IntPtr(-4));
+            System.Drawing.Point previousCursor = Cursor.Position;
+            try
+            {
+                using (PerfviewContext context = new PerfviewContext())
+                {
+                    TaskbarWindow overlay = Application.OpenForms.OfType<TaskbarWindow>().Single();
+                    WaitFor(() => overlay.Visible && overlay.Opacity == 1, "Graphs did not reach a safe taskbar position.");
+                    PumpFor(1000);
+                    for (int graph = 0; graph < overlay.Graphs.Settings.Metrics.Count; graph++)
+                    {
+                        int count = overlay.Graphs.Settings.Metrics.Count;
+                        System.Drawing.Point point = overlay.Graphs.PointToScreen(new System.Drawing.Point(overlay.Graphs.Width * (2 * graph + 1) / (2 * count), overlay.Graphs.Height / 2));
+                        Assert.That(WindowFromPoint(point), Is.EqualTo(overlay.Graphs.Handle), "The graph is not the mouse input target.");
+                        SetCursorPos(point.X, point.Y);
+                        mouse_event(0x2, 0, 0, 0, UIntPtr.Zero);
+                        PumpFor(50);
+                        mouse_event(0x4, 0, 0, 0, UIntPtr.Zero);
+                        WaitFor(() => Application.OpenForms.OfType<DetailsWindow>().Any(window => window.Visible), "Clicking graph " + graph + " did not open Performance.");
+                        DetailsWindow details = Application.OpenForms.OfType<DetailsWindow>().Single();
+                        System.Drawing.Point inside = details.PointToScreen(new System.Drawing.Point(20, 20));
+                        IntPtr hit = WindowFromPoint(inside);
+                        Assert.That(hit == details.Handle || Native.IsChild(details.Handle, hit), Is.True, "The performance window opened behind another window.");
+                        details.Close();
+                        PumpFor(500);
+                    }
+                }
+            }
+            finally
+            {
+                SetCursorPos(previousCursor.X, previousCursor.Y);
+                Native.SetThreadDpiAwarenessContext(previousDpi);
+            }
+        }
+
         [TestCase(false), TestCase(true), Apartment(ApartmentState.STA), Category("Desktop")]
         [Explicit("Requires an interactive Windows desktop with Perfview closed and free taskbar space.")]
         public void SettingsDropdownsStayOpenWhileGraphsRefresh(bool fromDetails)
@@ -47,11 +87,12 @@ namespace Perfview.Tests
                                 // Use desktop input: opening by CB_SHOWDROPDOWN or sent
                                 // window messages bypasses the native capture behavior.
                                 System.Drawing.Point arrow = combo.PointToScreen(new System.Drawing.Point(combo.Width - 10, combo.Height / 2));
+                                TestContext.WriteLine("Dropdown target: " + arrow + "; hit=" + WindowFromPoint(arrow) + "; combo=" + combo.Handle + "; foreground=" + Native.GetForegroundWindow() + "; dialog=" + window.Handle + "; owner=" + Native.GetWindow(window.Handle, 4));
                                 SetCursorPos(arrow.X, arrow.Y);
                                 mouse_event(0x2, 0, 0, 0, UIntPtr.Zero);
                                 mouse_event(0x4, 0, 0, 0, UIntPtr.Zero);
                                 PumpFor(30);
-                                Assert.That(combo.DroppedDown, Is.True, "Dropdown did not open.");
+                                Assert.That(combo.DroppedDown, Is.True, "Dropdown did not open. Hit=" + WindowFromPoint(arrow) + "; foreground=" + Native.GetForegroundWindow() + "; focused=" + combo.Focused);
                                 PumpFor(1200);
                                 Assert.That(combo.DroppedDown, Is.True, "Dropdown closed during graph refresh: " + combo.SelectedItem);
                                 ComboBoxInfo info = new ComboBoxInfo { Size = Marshal.SizeOf(typeof(ComboBoxInfo)) };

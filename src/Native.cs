@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
+using Microsoft.Win32.SafeHandles;
 
 namespace Perfview
 {
@@ -35,6 +36,13 @@ namespace Perfview
             public CounterValue Value;
         }
         [DllImport("kernel32.dll")] internal static extern bool GetSystemTimes(out FileTime idle, out FileTime kernel, out FileTime user);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern SafeFileHandle CreateFile(string path, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
+        internal static bool CanReadTemperatureDriver()
+        {
+            // Test the same device access used by LibreHardwareMonitor; an installed
+            // driver can still be stopped, blocked, or inaccessible to this user.
+            using (SafeFileHandle handle = CreateFile(@"\\?\GLOBALROOT\Device\PawnIO", 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero)) return !handle.IsInvalid;
+        }
         [DllImport("kernel32.dll")] internal static extern bool GlobalMemoryStatusEx(ref MemoryStatus status);
         [DllImport("pdh.dll", CharSet = CharSet.Unicode)] internal static extern uint PdhOpenQuery(string source, IntPtr user, out IntPtr query);
         [DllImport("pdh.dll", CharSet = CharSet.Unicode)] internal static extern uint PdhAddEnglishCounter(IntPtr query, string path, IntPtr user, out IntPtr counter);
@@ -45,6 +53,14 @@ namespace Perfview
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr FindWindow(string className, string title);
         [DllImport("user32.dll")] internal static extern bool GetWindowRect(IntPtr window, out Rect rect);
         [DllImport("user32.dll")] internal static extern bool IsWindowVisible(IntPtr window);
+        [DllImport("user32.dll")] internal static extern bool IsWindow(IntPtr window);
+        [DllImport("user32.dll")] internal static extern IntPtr GetWindow(IntPtr window, uint command);
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)] private static extern IntPtr SetWindowLongPtr(IntPtr window, int index, IntPtr value);
+        internal static bool SetWindowOwner(IntPtr window, IntPtr owner)
+        {
+            if (GetWindow(window, 4) != owner) SetWindowLongPtr(window, -8, owner); // GW_OWNER / GWLP_HWNDPARENT
+            return GetWindow(window, 4) == owner;
+        }
         [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] internal static extern IntPtr GetCapture();
         [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
@@ -62,6 +78,7 @@ namespace Perfview
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern uint RegisterWindowMessage(string message);
         [DllImport("user32.dll")] internal static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
         [DllImport("dwmapi.dll")] internal static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
+        [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out int value, int size);
 
         internal static float Scale(IntPtr window)
         {
@@ -78,6 +95,26 @@ namespace Perfview
             rect = native.Rectangle;
             Rectangle visible = Rectangle.Intersect(rect, Screen.FromHandle(handle).Bounds);
             return visible.Width > 8 && visible.Height > 8;
+        }
+
+        internal static bool IsTrayOverflowOpen(IntPtr taskbar)
+        {
+            uint shellProcess;
+            GetWindowThreadProcessId(taskbar, out shellProcess);
+            foreach (string className in new[] { "TopLevelWindowForOverflowXamlIsland", "NotifyIconOverflowWindow" })
+            {
+                IntPtr popup = FindWindow(className, null);
+                if (popup == IntPtr.Zero || !IsWindowVisible(popup)) continue;
+                uint popupProcess;
+                GetWindowThreadProcessId(popup, out popupProcess);
+                Rect bounds;
+                if (popupProcess != shellProcess || !GetWindowRect(popup, out bounds) || bounds.Rectangle.Width <= 0 || bounds.Rectangle.Height <= 0) continue;
+                // Explorer can leave a dismissed XAML window visible but cloaked.
+                int cloaked;
+                if (DwmGetWindowAttribute(popup, 14, out cloaked, sizeof(int)) == 0 && cloaked != 0) continue; // DWMWA_CLOAKED
+                return true;
+            }
+            return false;
         }
 
         internal static bool IsFullscreen(IntPtr taskbar, int ownProcess)

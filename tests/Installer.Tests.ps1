@@ -105,11 +105,13 @@ Describe 'Perfview installer' -Tag 'Installer' {
 
     It 'installs intact application files and registers a per-user uninstaller' {
         Install-TestApp
-        foreach ($file in @('Perfview.exe', 'Perfview.exe.config')) {
+        $expectedFiles = @(Get-ChildItem -LiteralPath $AppDirectory -File | Where-Object { $_.Name -in @('Perfview.exe', 'Perfview.exe.config', 'THIRD-PARTY-NOTICES.txt') -or $_.Extension -eq '.dll' } | ForEach-Object Name)
+        $expectedFiles | Should -Contain 'LibreHardwareMonitorLib.dll'
+        foreach ($file in $expectedFiles) {
             (Get-FileHash -LiteralPath (Join-Path $state.InstallDirectory $file)).Hash |
                 Should -Be (Get-FileHash -LiteralPath (Join-Path $AppDirectory $file)).Hash
         }
-        $unexpected = @(Get-ChildItem -LiteralPath $state.InstallDirectory -File | Where-Object Name -NotIn @('Perfview.exe', 'Perfview.exe.config', 'unins000.exe', 'unins000.dat'))
+        $unexpected = @(Get-ChildItem -LiteralPath $state.InstallDirectory -File | Where-Object Name -NotIn ($expectedFiles + @('unins000.exe', 'unins000.dat')))
         $unexpected | Should -HaveCount 0
         Get-TestUninstaller | Should -Exist
     }

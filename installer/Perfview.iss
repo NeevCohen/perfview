@@ -25,6 +25,7 @@ VersionInfoDescription={#AppName} Setup
 DefaultDirName={localappdata}\Programs\{#AppName}
 PrivilegesRequired=lowest
 MinVersion=10.0
+ArchitecturesAllowed=x64compatible
 AppMutex={#AppMutexName}
 SetupMutex=Local\{#AppId}.Setup
 CloseApplications=no
@@ -42,6 +43,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#AppSourceDir}\Perfview.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#AppSourceDir}\Perfview.exe.config"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#AppSourceDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#AppSourceDir}\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{userprograms}\{#AppName}"; Filename: "{app}\Perfview.exe"; WorkingDir: "{app}"

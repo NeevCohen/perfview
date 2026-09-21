@@ -10,6 +10,7 @@ namespace Perfview
     public sealed class Settings
     {
         public bool ShowCpu = true, ShowGpu = true, ShowMemory = true, ShowDisk = true, ShowNetwork = true;
+        public bool ShowTemperatures;
         public bool AlignRight;
         public int Offset = 160, CellWidth = 88, Interval = 1000;
         public string Theme = "System";

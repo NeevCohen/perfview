@@ -46,9 +46,21 @@ namespace Perfview
         {
             switch (metric) { case Metric.Cpu: return "CPU"; case Metric.Gpu: return "GPU"; case Metric.Memory: return "Memory"; case Metric.Disk: return "Disk"; default: return "Network"; }
         }
-        internal static string Value(Sample sample, Metric metric)
+        internal static string Value(Sample sample, Metric metric, bool showTemperatures = false, bool compact = false)
         {
-            return metric == Metric.Network ? MetricMath.RateText(sample.Value(metric)) : MetricMath.PercentText(sample.Value(metric));
+            string value = metric == Metric.Network ? MetricMath.RateText(sample.Value(metric)) : MetricMath.PercentText(sample.Value(metric));
+            if (compact && metric == Metric.Network) value = value.Replace(" ", "");
+            if (!showTemperatures) return value;
+            double temperature = sample.Temperatures.ForComponent(metric);
+            if (double.IsNaN(temperature)) return value;
+            string text = compact ? temperature.ToString("0") + "\u00b0C" : TemperatureReading.Text(temperature);
+            return value + "  " + text;
+        }
+        internal static string Summary(Sample sample, bool showTemperatures)
+        {
+            List<string> values = new List<string>();
+            foreach (Metric metric in Enum.GetValues(typeof(Metric))) values.Add(Name(metric) + " " + Value(sample, metric, showTemperatures));
+            return string.Join(" | ", values);
         }
         internal static GraphicsPath Rounded(RectangleF rect, float radius)
         {
@@ -67,6 +79,44 @@ namespace Perfview
             using (Brush brush = new SolidBrush(color))
             using (StringFormat format = new StringFormat { Alignment = right ? StringAlignment.Far : StringAlignment.Near, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
                 graphics.DrawString(text, font, brush, bounds, format);
+        }
+
+        private static float TextWidth(Graphics graphics, string text, float size, StringFormat format)
+        {
+            using (Font font = new Font("Segoe UI", size, FontStyle.Bold, GraphicsUnit.Pixel))
+                return graphics.MeasureString(text, font, int.MaxValue, format).Width;
+        }
+
+        internal static void MiniHeader(Graphics graphics, string label, string value, float scale, float valueSize, Color accent, Color color, RectangleF bounds)
+        {
+            using (StringFormat format = (StringFormat)StringFormat.GenericTypographic.Clone())
+            {
+                format.FormatFlags = StringFormatFlags.NoWrap;
+                format.LineAlignment = StringAlignment.Center;
+                format.Trimming = StringTrimming.None;
+                float labelSize = 9 * scale, gap = 3 * scale;
+                float labelWidth = TextWidth(graphics, label, labelSize, format);
+                float valueWidth = TextWidth(graphics, value, valueSize, format);
+                if (labelWidth + gap + valueWidth > bounds.Width)
+                {
+                    value = value.Replace("  ", " ").Replace("KB/s", "K/s").Replace("MB/s", "M/s").Replace("GB/s", "G/s").Replace("TB/s", "T/s");
+                    valueWidth = TextWidth(graphics, value, valueSize, format);
+                }
+                // Measure both runs with the same format used to draw them. Keep
+                // the complete reading on one row even in a compressed taskbar.
+                float fit = Math.Min(1, Math.Max(1, bounds.Width - gap - scale) / Math.Max(1, labelWidth + valueWidth));
+                labelSize *= fit; valueSize *= fit;
+                labelWidth = TextWidth(graphics, label, labelSize, format);
+                using (Font labelFont = new Font("Segoe UI", labelSize, FontStyle.Bold, GraphicsUnit.Pixel))
+                using (Font valueFont = new Font("Segoe UI", valueSize, FontStyle.Bold, GraphicsUnit.Pixel))
+                using (Brush labelBrush = new SolidBrush(accent))
+                using (Brush valueBrush = new SolidBrush(color))
+                {
+                    graphics.DrawString(label, labelFont, labelBrush, new RectangleF(bounds.Left, bounds.Top, labelWidth, bounds.Height), format);
+                    format.Alignment = StringAlignment.Far;
+                    graphics.DrawString(value, valueFont, valueBrush, new RectangleF(bounds.Left + labelWidth + gap, bounds.Top, Math.Max(1, bounds.Width - labelWidth - gap), bounds.Height), format);
+                }
+            }
         }
 
         internal static void Graph(Graphics graphics, RectangleF rect, History history, Metric metric, Color color, Color grid, bool detailed)
@@ -169,14 +219,14 @@ namespace Perfview
                 Metric metric = metrics[i];
                 RectangleF cell = horizontal ? new RectangleF(i * Width / (float)metrics.Count, 0, Width / (float)metrics.Count, Height) : new RectangleF(0, i * Height / (float)metrics.Count, Width, Height / (float)metrics.Count);
                 Color accent = Palette.Accent(metric);
-                float pad = 9 * scale;
+                bool temperatures = Settings.ShowTemperatures;
+                float pad = (temperatures ? 4 : 9) * scale;
                 string label = metric == Metric.Memory ? "RAM" : metric == Metric.Network ? "NET" : GraphPaint.Name(metric).ToUpperInvariant();
+                string value = Paused ? "\u2016" : GraphPaint.Value(History.Latest, metric, temperatures, true);
+                float valueSize = (metric == Metric.Network || temperatures ? 9 : 11) * scale;
                 RectangleF chart = new RectangleF(cell.Left + pad, cell.Top + 20 * scale, cell.Width - 2 * pad, Math.Max(2, cell.Height - 26 * scale));
                 GraphPaint.Graph(g, chart, History, metric, accent, Palette.Grid, false);
-                GraphPaint.Text(g, label, 9 * scale, FontStyle.Bold, accent, new RectangleF(cell.Left + pad, cell.Top + 4 * scale, 26 * scale, 13 * scale), false);
-                string value = Paused ? "\u2016" : GraphPaint.Value(History.Latest, metric);
-                if (metric == Metric.Network) value = value.Replace(" ", "");
-                GraphPaint.Text(g, value, (metric == Metric.Network ? 9 : 11) * scale, FontStyle.Bold, Palette.Text, new RectangleF(cell.Left + pad + 23 * scale, cell.Top + 3 * scale, Math.Max(1, cell.Width - 2 * pad - 23 * scale), 15 * scale), true);
+                GraphPaint.MiniHeader(g, label, value, scale, valueSize, accent, Palette.Text, new RectangleF(cell.Left + pad, cell.Top + 3 * scale, Math.Max(1, cell.Width - 2 * pad), 15 * scale));
                 if (i > 0 && horizontal) using (Pen border = new Pen(Color.FromArgb(110, Palette.Border))) g.DrawLine(border, cell.Left, 9 * scale, cell.Left, Height - 9 * scale);
             }
         }
@@ -185,10 +235,11 @@ namespace Perfview
     internal sealed class DetailGraphs : Control
     {
         private readonly History history;
+        private readonly bool showTemperatures;
         internal Palette Palette;
-        internal DetailGraphs(History history, Palette palette)
+        internal DetailGraphs(History history, Palette palette, bool showTemperatures = false)
         {
-            this.history = history; Palette = palette;
+            this.history = history; Palette = palette; this.showTemperatures = showTemperatures;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
             AccessibleRole = AccessibleRole.Chart;
             AccessibleName = "60-second system performance history";
@@ -210,8 +261,8 @@ namespace Perfview
                 using (GraphicsPath path = GraphPaint.Rounded(card, 10))
                 using (Brush fill = new SolidBrush(Palette.Card))
                 using (Pen border = new Pen(Palette.Border)) { g.FillPath(fill, path); g.DrawPath(border, path); }
-                GraphPaint.Text(g, GraphPaint.Name(metric), 13, FontStyle.Bold, accent, new RectangleF(card.X + 16, card.Y + 12, 125, 21), false);
-                GraphPaint.Text(g, GraphPaint.Value(history.Latest, metric), 22, FontStyle.Regular, Palette.Text, new RectangleF(card.Right - 188, card.Y + 9, 172, 29), true);
+                GraphPaint.Text(g, GraphPaint.Name(metric), 13, FontStyle.Bold, accent, new RectangleF(card.X + 16, card.Y + 12, 84, 21), false);
+                GraphPaint.Text(g, GraphPaint.Value(history.Latest, metric, showTemperatures), showTemperatures ? 19 : 22, FontStyle.Regular, Palette.Text, new RectangleF(card.X + 100, card.Y + 9, card.Width - 116, 29), true);
                 string subtitle;
                 Sample current = history.Latest;
                 switch (metric)
