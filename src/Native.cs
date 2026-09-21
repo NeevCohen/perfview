@@ -67,7 +67,6 @@ namespace Perfview
         [DllImport("user32.dll")] internal static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
         [DllImport("user32.dll")] internal static extern uint GetDpiForWindow(IntPtr window);
         [DllImport("user32.dll")] internal static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
-        [DllImport("user32.dll")] internal static extern bool DestroyIcon(IntPtr icon);
         internal delegate bool EnumWindowCallback(IntPtr window, IntPtr parameter);
         internal delegate void WinEventCallback(IntPtr hook, uint eventType, IntPtr window, int objectId, int childId, uint thread, uint time);
         [DllImport("user32.dll")] internal static extern bool EnumChildWindows(IntPtr parent, EnumWindowCallback callback, IntPtr parameter);

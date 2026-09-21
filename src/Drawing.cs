@@ -169,17 +169,8 @@ namespace Perfview
         }
         internal static Icon CreateIcon()
         {
-            using (Bitmap bitmap = new Bitmap(32, 32))
-            using (Graphics graphics = Graphics.FromImage(bitmap))
-            {
-                graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                using (GraphicsPath path = Rounded(new RectangleF(0, 0, 32, 32), 8))
-                using (Brush brush = new SolidBrush(Color.FromArgb(25, 34, 43))) graphics.FillPath(brush, path);
-                using (Pen pen = new Pen(Color.FromArgb(75, 221, 180), 2.5f)) graphics.DrawLines(pen, new[] { new PointF(5, 22), new PointF(10, 22), new PointF(14, 10), new PointF(18, 25), new PointF(23, 15), new PointF(27, 15) });
-                IntPtr handle = bitmap.GetHicon();
-                try { using (Icon temporary = Icon.FromHandle(handle)) return (Icon)temporary.Clone(); }
-                finally { Native.DestroyIcon(handle); }
-            }
+            using (System.IO.Stream stream = typeof(GraphPaint).Assembly.GetManifestResourceStream("Perfview.ico"))
+            using (Icon icon = new Icon(stream, 32, 32)) return (Icon)icon.Clone();
         }
     }
 

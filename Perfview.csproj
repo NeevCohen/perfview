@@ -17,6 +17,7 @@
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <StartupObject>Perfview.Program</StartupObject>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\Perfview.ico</ApplicationIcon>
     <OutputPath>bin\</OutputPath>
     <Optimize>true</Optimize>
     <WarningLevel>4</WarningLevel>
@@ -33,6 +34,7 @@
     <Compile Include="src\Temperatures.cs" />
     <Compile Include="src\AssemblyInfo.cs" /><Compile Include="src\Program.cs" /><Compile Include="src\Native.cs" /><Compile Include="src\Metrics.cs" /><Compile Include="src\Settings.cs" /><Compile Include="src\Drawing.cs" /><Compile Include="src\Windows.cs" />
     <None Include="App.config" /><None Include="app.manifest" />
+    <EmbeddedResource Include="assets\Perfview.ico" LogicalName="Perfview.ico" />
     <Content Include="THIRD-PARTY-NOTICES.txt"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
   </ItemGroup>
 </Project>

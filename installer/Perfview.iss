@@ -32,6 +32,7 @@ CloseApplications=no
 RestartApplications=no
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\Perfview.exe
+SetupIconFile=..\assets\Perfview.ico
 OutputBaseFilename=Perfview-{#AppVersion}-Setup
 Compression=lzma2
 SolidCompression=yes
