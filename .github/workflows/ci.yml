@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  workflow_call:
+    inputs:
+      version:
+        description: Release version, without the v prefix
+        type: string
+        required: true
+    outputs:
+      artifact-name:
+        description: Artifact containing the tested release files
+        value: ${{ jobs.build.outputs.artifact-name }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Lint, build, and test app and installer
+    runs-on: windows-2022
+    timeout-minutes: 30
+    outputs:
+      artifact-name: ${{ steps.version.outputs.artifact-name }}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      # Test the same application files that the installer packages.
+      PerfviewAppDirectory: ${{ github.workspace }}\artifacts\installer\app
+      RestoreLockedMode: 'true'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET SDK for lint and NUnit
+        id: dotnet
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+          cache: true
+          cache-dependency-path: tests/packages.lock.json
+
+      - name: Select SDK and stamp build version
+        id: version
+        env:
+          SDK_VERSION: ${{ steps.dotnet.outputs.dotnet-version }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: ./scripts/ci/Initialize-Build.ps1
+
+      - name: Lint PowerShell build and installer scripts
+        run: ./scripts/ci/Invoke-PowerShellLint.ps1
+
+      - name: Build app and installer
+        # build.ps1 already treats C# compiler warnings as errors. Run tests
+        # separately so CI can exclude hardware-dependent app checks.
+        run: ./build-installer.ps1 -Bootstrap
+
+      - name: Lint installer source
+        run: ./scripts/ci/Invoke-InstallerLint.ps1
+
+      - name: Restore application and test dependencies
+        run: ./scripts/ci/Restore-Dependencies.ps1
+
+      - name: Lint C# app and tests
+        run: ./scripts/ci/Invoke-CSharpLint.ps1
+
+      - name: Test app
+        # Hosted runners do not provide a WDDM GPU or an interactive Explorer
+        # taskbar. Keep unit and offscreen/UI rendering tests in the CI suite.
+        run: ./tests/Run-AppTests.ps1 -AppDirectory $env:PerfviewAppDirectory -ResultsDirectory ./artifacts/test-results -Filter 'TestCategory!=LiveCounters&TestCategory!=Desktop'
+
+      - name: Test installer install, upgrade, and uninstall
+        if: ${{ !cancelled() && env.INNO_COMPILER != '' }}
+        run: ./tests/Run-InstallerTests.ps1 -InnoCompiler $env:INNO_COMPILER -AppDirectory $env:PerfviewAppDirectory
+
+      - name: Package tested app and installer
+        run: ./scripts/ci/New-ReleasePackage.ps1
+
+      - name: Upload app, installer, and checksums
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.version.outputs.artifact-name }}
+          path: artifacts/release/*
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload test results and installer logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/test-results/
+            artifacts/installer-tests/**/*.log
+            artifacts/installer-tests/installer-tests.xml
+            artifacts/installer-lint.log
+          if-no-files-found: warn
+          retention-days: 14

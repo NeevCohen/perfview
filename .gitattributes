@@ -1,0 +1,2 @@
+# Keep the release script usable by Bash after checkout on any platform.
+scripts/ci/*.sh text eol=lf

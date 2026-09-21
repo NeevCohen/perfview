@@ -1,0 +1,72 @@
+name: Release
+run-name: Release v${{ inputs.version }}
+
+# Start from Actions > Release > Run workflow, selecting main.
+# Neither a push to main nor a tag push creates a release automatically.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version without the v prefix (major.minor or major.minor.patch)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check main branch, version, and unused release tag
+        shell: pwsh
+        run: ./scripts/ci/Test-ReleaseRequest.ps1
+
+  build:
+    name: Run release CI
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+    with:
+      version: ${{ inputs.version }}
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Download tested release files
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}
+          path: release
+
+      - name: Verify assets and publish release at the tested commit
+        shell: bash
+        run: bash ./scripts/ci/Publish-Release.sh

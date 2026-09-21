@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <Platform Condition="'$(Platform)' == ''">AnyCPU</Platform>
+    <ProjectGuid>{3C5B63FC-CCAA-44B2-9849-608BEB923E34}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>Perfview</RootNamespace>
+    <AssemblyName>Perfview</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <StartupObject>Perfview.Program</StartupObject>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <OutputPath>bin\</OutputPath>
+    <Optimize>true</Optimize>
+    <WarningLevel>4</WarningLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System" /><Reference Include="System.Core" /><Reference Include="System.Drawing" /><Reference Include="System.Windows.Forms" /><Reference Include="System.Xml" />
+    <Reference Include="UIAutomationClient" /><Reference Include="UIAutomationTypes" /><Reference Include="WindowsBase" />
+    <Compile Include="src\TaskbarLayout.cs" />
+    <Compile Include="src\AssemblyInfo.cs" /><Compile Include="src\Program.cs" /><Compile Include="src\Native.cs" /><Compile Include="src\Metrics.cs" /><Compile Include="src\Settings.cs" /><Compile Include="src\Drawing.cs" /><Compile Include="src\Windows.cs" />
+    <None Include="App.config" /><None Include="app.manifest" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
