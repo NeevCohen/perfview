@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
-using System.Windows.Automation;
+using UIA = Interop.UIAutomationClient;
 
 namespace Perfview
 {
@@ -61,45 +61,68 @@ namespace Perfview
                 };
                 Native.EnumChildWindows(layout.Handle, enumerate, IntPtr.Zero);
 
-                // Read only the taskbar subtree. A cache request batches cross-process
-                // property reads; no UI Automation work runs on the painting thread.
-                AutomationElement root = AutomationElement.FromHandle(layout.Handle);
-                layout.Diagnostics.Add("UIA taskbar: " + root.Current.BoundingRectangle);
                 int actions = 0;
-                CacheRequest cache = new CacheRequest();
+                // The Framework client creates rebar proxies that remain rooted in
+                // native UIA after each scan. Use the native client, cache only the
+                // properties we need, and release all scan-owned COM references.
+                UIA.IUIAutomation automation = null;
+                UIA.IUIAutomationElement root = null;
+                UIA.IUIAutomationCacheRequest cache = null;
+                UIA.IUIAutomationCondition ownProcess = null, otherProcess = null;
+                UIA.IUIAutomationElementArray elements = null;
+                try
                 {
-                    cache.TreeScope = TreeScope.Element;
-                    cache.Add(AutomationElement.BoundingRectangleProperty);
-                    cache.Add(AutomationElement.ControlTypeProperty);
-                    cache.Add(AutomationElement.IsOffscreenProperty);
-                    cache.Add(AutomationElement.IsKeyboardFocusableProperty);
-                    cache.Add(AutomationElement.AutomationIdProperty);
-                    cache.Add(AutomationElement.ClassNameProperty);
-                    using (cache.Activate())
+                    automation = new UIA.CUIAutomation();
+                    root = automation.ElementFromHandle(layout.Handle);
+                    cache = automation.CreateCacheRequest();
+                    cache.TreeScope = UIA.TreeScope.TreeScope_Element;
+                    cache.AutomationElementMode = UIA.AutomationElementMode.AutomationElementMode_None;
+                    cache.AddProperty(UIA.UIA_PropertyIds.UIA_BoundingRectanglePropertyId);
+                    cache.AddProperty(UIA.UIA_PropertyIds.UIA_ControlTypePropertyId);
+                    cache.AddProperty(UIA.UIA_PropertyIds.UIA_IsOffscreenPropertyId);
+                    cache.AddProperty(UIA.UIA_PropertyIds.UIA_IsKeyboardFocusablePropertyId);
+                    cache.AddProperty(UIA.UIA_PropertyIds.UIA_AutomationIdPropertyId);
+                    cache.AddProperty(UIA.UIA_PropertyIds.UIA_ClassNamePropertyId);
+                    // The overlay is owned by the taskbar; exclude our own graphs.
+                    using (System.Diagnostics.Process process = System.Diagnostics.Process.GetCurrentProcess())
+                        ownProcess = automation.CreatePropertyCondition(UIA.UIA_PropertyIds.UIA_ProcessIdPropertyId, process.Id);
+                    otherProcess = automation.CreateNotCondition(ownProcess);
+                    elements = root.FindAllBuildCache(UIA.TreeScope.TreeScope_Descendants, otherProcess, cache);
+                    for (int i = 0; i < elements.Length; i++)
                     {
-                        // Native ownership puts our graphs inside the taskbar's
-                        // accessibility subtree. They must not block their own
-                        // placement or each scan moves them out of the last gap.
-                        Condition otherProcess = new NotCondition(new PropertyCondition(AutomationElement.ProcessIdProperty, System.Diagnostics.Process.GetCurrentProcess().Id));
-                        AutomationElementCollection elements = root.FindAll(TreeScope.Descendants, otherProcess);
-                        foreach (AutomationElement element in elements)
+                        UIA.IUIAutomationElement element = elements.GetElement(i);
+                        try
                         {
-                            AutomationElement.AutomationElementInformation info = element.Cached;
-                            if (info.IsOffscreen) continue;
-                            ControlType type = info.ControlType;
-                            bool interactive = type == ControlType.Button || type == ControlType.SplitButton || type == ControlType.ListItem || type == ControlType.TabItem || type == ControlType.MenuItem || type == ControlType.CheckBox || type == ControlType.RadioButton || type == ControlType.Hyperlink || type == ControlType.Edit || type == ControlType.ComboBox || type == ControlType.Slider;
-                            if (!interactive && !(info.IsKeyboardFocusable && type == ControlType.Custom)) continue;
-                            System.Windows.Rect native = info.BoundingRectangle;
-                            if (native.IsEmpty || double.IsInfinity(native.Width) || double.IsInfinity(native.Height)) continue;
-                            Rectangle rect = Rectangle.FromLTRB((int)Math.Floor(native.Left), (int)Math.Floor(native.Top), (int)Math.Ceiling(native.Right), (int)Math.Ceiling(native.Bottom));
+                            if (element.CachedIsOffscreen != 0) continue;
+                            int type = element.CachedControlType;
+                            bool interactive = type == UIA.UIA_ControlTypeIds.UIA_ButtonControlTypeId || type == UIA.UIA_ControlTypeIds.UIA_SplitButtonControlTypeId ||
+                                type == UIA.UIA_ControlTypeIds.UIA_ListItemControlTypeId || type == UIA.UIA_ControlTypeIds.UIA_TabItemControlTypeId ||
+                                type == UIA.UIA_ControlTypeIds.UIA_MenuItemControlTypeId || type == UIA.UIA_ControlTypeIds.UIA_CheckBoxControlTypeId ||
+                                type == UIA.UIA_ControlTypeIds.UIA_RadioButtonControlTypeId || type == UIA.UIA_ControlTypeIds.UIA_HyperlinkControlTypeId ||
+                                type == UIA.UIA_ControlTypeIds.UIA_EditControlTypeId || type == UIA.UIA_ControlTypeIds.UIA_ComboBoxControlTypeId ||
+                                type == UIA.UIA_ControlTypeIds.UIA_SliderControlTypeId;
+                            if (!interactive && !(element.CachedIsKeyboardFocusable != 0 && type == UIA.UIA_ControlTypeIds.UIA_CustomControlTypeId)) continue;
+                            UIA.tagRECT native = element.CachedBoundingRectangle;
+                            Rectangle rect = Rectangle.FromLTRB(native.left, native.top, native.right, native.bottom);
                             rect = Rectangle.Intersect(layout.Bounds, rect);
                             if (rect.Width <= 0 || rect.Height <= 0) continue;
                             layout.Occupied.Add(rect);
-                            layout.Diagnostics.Add(type.ProgrammaticName + " / " + info.AutomationId + " / " + info.ClassName + " " + rect);
+                            string automationId = element.CachedAutomationId ?? "";
+                            layout.Diagnostics.Add(type + " / " + automationId + " / " + element.CachedClassName + " " + rect);
                             actions++;
-                            if (info.AutomationId.StartsWith("SystemTray.", StringComparison.Ordinal)) hasTray = true;
+                            if (automationId.StartsWith("SystemTray.", StringComparison.Ordinal)) hasTray = true;
                         }
+                        finally { Marshal.ReleaseComObject(element); }
                     }
+                }
+                finally
+                {
+                    if (elements != null) Marshal.ReleaseComObject(elements);
+                    if (otherProcess != null) Marshal.ReleaseComObject(otherProcess);
+                    if (ownProcess != null) Marshal.ReleaseComObject(ownProcess);
+                    if (cache != null) Marshal.ReleaseComObject(cache);
+                    if (root != null) Marshal.ReleaseComObject(root);
+                    if (automation != null) Marshal.ReleaseComObject(automation);
                 }
                 // With incomplete discovery, do not guess which pixels are free.
                 Native.Rect current;
